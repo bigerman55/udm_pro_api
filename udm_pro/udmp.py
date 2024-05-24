@@ -12,7 +12,7 @@ class UDM_PRO_API:
         self.ONE_DAY_IN_HOURS = 86400
         self.UDM_PRO_URL = "<REDACTED>"
         self.headers = {"Accept": "application/json", "Content-Type": "application/json"}
-        self.data = {'username': "<REDACTED>", 'password': "<REDACTED>"}
+        self.data = {'username': '<REDACTED>', 'password': '<REDACTED>'}
         self.session = self.get_auth()
 
     def get_auth(self):
@@ -60,11 +60,15 @@ class UDM_PRO_API:
                     if "WAN" in event['msg']:
                         wan_events.append(event)
                         pprint.pprint(f'WAN EVENT: {event} \n\n{event["msg"]} - {event_date}\n\n')
+            else:
+                if "WAN" in event['msg']:
+                    pprint.pprint(f'WAN EVENT: {event} \n\n{event["msg"]} - {event_date}\n\n')
 
         return wan_events
     
-    def get_wan_stats(self):
+    def get_wan_monitors(self):
         unhealthy_monitors = {}
+        healthy_monitors = {}
         wan_stats = {}
         health = self.get_site_health()
         stats = health['data'][1]['uptime_stats']
@@ -81,37 +85,33 @@ class UDM_PRO_API:
                             }
                         }
                     )
+                elif monitor['availability'] == 100.0:
+                    healthy_monitors.update(
+                        {
+                            monitor['target']: {
+                                'availability': monitor['availability'],
+                                'avg_latency': monitor['latency_average'],
+                                'type': monitor['type']
+                            }
+                        }
+                    )
             wan_stats.update(
                 {
                     wan: {
                         'unhealthy_monitors': unhealthy_monitors,
-                        'all_monitors': monitors
+                        'healthy_monitors': healthy_monitors,
                     }
                 }
             )
+
         return wan_stats
     
-    def get_unhealthy_wan_monitors(self):
-        wan_stats = self.get_wan_stats()
-        unhealthy = {}
-        for wan, stats in wan_stats.items():
-            if stats['unhealthy_monitors']:
-                unhealthy.update(
-                    {
-                        wan: stats['unhealthy_monitors']
-                    }
-                )
-        if not unhealthy:
-            return False
-        else:
-            return unhealthy
 
-
-# Testing method:
+#Testing method:
 # def main():
 #     client = UDM_PRO_API()
 
-#     pprint.pprint(client.get_unhealthy_wan_monitors())
+#     pprint.pprint(client.get_recent_wan_events())
 
 #     return
 
