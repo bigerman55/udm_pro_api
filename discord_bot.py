@@ -2,20 +2,21 @@
 
 import discord
 import asyncio
-from tools import ping, get_recent_wan_events, get_unhealthy_monitors, get_wan_ip
+from tools import ping, get_recent_wan_events, get_monitors, get_wan_ip, handle_files
 from discord.ext import commands, tasks
 
 intents = discord.Intents.default()
 intents.typing = True
 intents.message_content = True
 
-EMERGENCY_CHANNEL = "<REDACTED>"
-CHANNEL = "<REDACTED>"
-TOKEN = "<REDACTED>"
+EMERGENCY_CHANNEL = ''
+WAN_CHANNEL = ''
+PING_CHANNEL = ''
+TOKEN = ''
 # define test endpoints
-isp_gateway = "<REDACTED>"
-home_gateway = '<REDACTED>'
-isp_endpoint = '<REDACTED>'
+isp_gateway = ''
+home_gateway = ''
+isp_endpoint = ''
 google = 'google.com'
 
 # declare bot commands prefix
@@ -33,7 +34,7 @@ async def ping_tests():
 
     # wait for bot to become ready before moving forward (connected)
     await client.wait_until_ready()
-    channel = client.get_channel(CHANNEL)
+    channel = client.get_channel(PING_CHANNEL)
     emergency_channel = client.get_channel(EMERGENCY_CHANNEL)
     await channel.send(f'----------------------------------------------------')
     await channel.send(
@@ -56,6 +57,8 @@ async def ping_tests():
     else:
         await emergency_channel.send(f'ISP Gateway {isp_gateway}: DOWN')
 
+    await channel.send(f'----------------------------------------------------')
+
     return
 
 
@@ -70,21 +73,35 @@ async def wan_events():
         await emergency_channel.send(f'WAN EVENT - \n{event["msg"]} - {event["datetime"]}\n')
     return
 
+
 #7.5 minutes
 @tasks.loop(seconds=450)
-async def unhealthy_wan_monitors():
-    unhealthy_monitors = get_unhealthy_monitors()
+async def wan_monitors():
+    wan_stats = get_monitors()
     await client.wait_until_ready()
-    channel = client.get_channel(CHANNEL)
+    channel = client.get_channel(WAN_CHANNEL)
     emergency_channel = client.get_channel(EMERGENCY_CHANNEL)
-    await channel.send(f"--------------------------- INSPECTING WAN MONITOR ---------------------------")
-    if unhealthy_monitors:
-        for monitor, metrics in unhealthy_monitors.items():
-            for metric in metrics:
-                await emergency_channel.send(f"--------------------------- UNHEALTHY WAN MONITOR ---------------------------")
-                await emergency_channel.send(f"--------------------------- {monitor} --- {metric} ---------------------------")
-    else:
-        await channel.send(f"--------------------------- WAN MONITORS ARE HEALTHY ---------------------------")
+    await channel.send(f"--------------------------- INSPECTING WAN MONITORS ---------------------------")
+    for wan, monitors in wan_stats.items():
+        if monitors['unhealthy_monitors']:
+            alarm_files = handle_files(wan_stats)
+            if not alarm_files:
+                await emergency_channel.send(f"--------------------------- UNHEALTHY {wan} MONITORS BELOW ---------------------------")
+                for monitor, metrics in monitors['unhealthy_monitors'].items():
+                    await emergency_channel.send(f"---- {monitor} --- {metrics} ----")
+            else:
+                await channel.send(f"---- {wan} ---- has already alarmed in the last hour ----")
+            
+        if monitors['healthy_monitors']:
+            await channel.send(f"--------------------------- HEALTHY {wan} MONITORS BELOW ---------------------------")
+            for monitor, metrics in monitors['healthy_monitors'].items():
+                await channel.send(f"---- {monitor} --- {metrics} ----")
+
+        if not monitors:
+            await emergency_channel.send(f"---- WAN MONITOR HAS FAILED TO INSPECT - {wan} - {monitors} ----")
+
+    await channel.send(f"--------------------------- COMPLETED WAN MONITOR INSPECTION ---------------------------")
+
     return
 
 
@@ -92,10 +109,10 @@ async def main():
     async with client:
         client.loop.create_task(ping_tests())
         client.loop.create_task(wan_events())
-        client.loop.create_task(unhealthy_wan_monitors())
+        client.loop.create_task(wan_monitors())
         wan_events.start()
         ping_tests.start()
-        unhealthy_wan_monitors.start()
+        wan_monitors.start()
         await client.start(TOKEN)
 
 
